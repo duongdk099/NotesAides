@@ -13,8 +13,14 @@ Keep your database isolated and clean by running it via Docker:
 docker-compose up -d db
 ```
 
+
+
+```bash
+# From the root directory (NotesAides)
+cd api
 bun run db:generate
 bun run db:push
+```
 
 
 ### 2. Start the API

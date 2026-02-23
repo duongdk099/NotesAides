@@ -44,3 +44,25 @@ export function useCreateNote() {
         },
     });
 }
+export function useUpdateNote() {
+    const queryClient = useQueryClient();
+    const { token } = useAuth();
+
+    return useMutation({
+        mutationFn: async ({ id, ...updates }: { id: string; title: string; content: string }) => {
+            const res = await fetch(`${API_URL}/${id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                },
+                body: JSON.stringify(updates),
+            });
+            if (!res.ok) throw new Error('Failed to update note');
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notes'] });
+        },
+    });
+}

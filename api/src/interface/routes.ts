@@ -5,6 +5,7 @@ import { GetNoteUseCase } from '../application/GetNote';
 import { UpdateNoteUseCase } from '../application/UpdateNote';
 import { DeleteNoteUseCase } from '../application/DeleteNote';
 import { DrizzleNoteRepository } from '../infrastructure/DrizzleNoteRepository';
+import { notifyChange } from '../infrastructure/websocket';
 
 const noteRoutes = new Hono();
 
@@ -21,6 +22,10 @@ noteRoutes.post('/', async (c) => {
     const payload = c.get('jwtPayload') as { sub: string };
     const body = await c.req.json();
     const note = await createNoteUseCase.execute(payload.sub, body.title, body.content);
+
+    // Notify clients
+    notifyChange(payload.sub, 'NOTE_CREATED', note.id);
+
     return c.json(note, 201);
 });
 
@@ -40,14 +45,21 @@ noteRoutes.get('/:id', async (c) => {
     return c.json(note);
 });
 
-noteRoutes.put('/:id', async (c) => {
+noteRoutes.on(['PUT', 'PATCH'], '/:id', async (c) => {
     const payload = c.get('jwtPayload') as { sub: string };
     const id = c.req.param('id');
     const body = await c.req.json();
+
+    console.log(`[API] Updating note ${id} for user ${payload.sub}`);
+
     const note = await updateNoteUseCase.execute(id, payload.sub, body.title, body.content);
     if (!note) {
         return c.json({ error: 'Note not found' }, 404);
     }
+
+    // Notify clients
+    notifyChange(payload.sub, 'NOTE_UPDATED', note.id);
+
     return c.json(note);
 });
 
@@ -58,6 +70,10 @@ noteRoutes.delete('/:id', async (c) => {
     if (!success) {
         return c.json({ error: 'Note not found' }, 404);
     }
+
+    // Notify clients
+    notifyChange(payload.sub, 'NOTE_DELETED', id);
+
     return c.json({ message: 'Note deleted successfully' });
 });
 
