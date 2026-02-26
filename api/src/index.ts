@@ -1,7 +1,9 @@
 import { Hono } from 'hono'
 import { cors } from 'hono/cors'
-import { createBunWebSocket } from 'hono/bun'
-import { verify } from 'hono/jwt'
+import { createBunWebSocket, serveStatic } from 'hono/bun'
+import { verify, jwt } from 'hono/jwt'
+import { randomUUID } from 'crypto'
+import { join } from 'path'
 import noteRoutes from './interface/routes'
 import authRoutes from './interface/authRoutes'
 import { wsEvents } from './infrastructure/websocket'
@@ -25,13 +27,13 @@ app.get(
         if (!token) return { status: 4001, reason: 'Token required' }
 
         try {
-            const payload = await verify(token, jwtSecret)
+            const payload = await verify(token, jwtSecret, 'HS256')
             const userId = payload.sub as string
 
             return {
                 onOpen(evt, ws) {
                     console.log(`[WS] User ${userId} connected`)
-                    ws.subscribe(`user_${userId}`)
+                        ; (ws.raw as any).subscribe(`user_${userId}`)
                 },
                 onClose() {
                     console.log(`[WS] User ${userId} disconnected`)
@@ -46,20 +48,44 @@ app.get(
 app.route('/notes', noteRoutes)
 app.route('/auth', authRoutes)
 
-// Handle hot-reloading by stopping the old server instance if it exists
-if ((globalThis as any).server) {
-    (globalThis as any).server.stop(true);
-}
+// Serve uploaded files
+app.use('/uploads/*', serveStatic({ root: './' }))
 
-// Start the Bun server
+// Authenticated upload endpoint
+const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_change_in_production'
+app.post('/upload', jwt({ secret: jwtSecret, alg: 'HS256' }), async (c) => {
+    try {
+        const body = await c.req.parseBody()
+        const file = body['file'] as File
+
+        if (!file) {
+            return c.json({ error: 'No file uploaded' }, 400)
+        }
+
+        const extension = file.name.split('.').pop()
+        const fileName = `${randomUUID()}.${extension}`
+        const filePath = join('uploads', fileName)
+
+        // Using Bun.write for efficient file saving
+        const bytes = await file.arrayBuffer()
+        await Bun.write(filePath, bytes)
+
+        const baseUrl = process.env.API_URL || 'http://localhost:3001'
+        return c.json({
+            url: `${baseUrl}/uploads/${fileName}`
+        })
+    } catch (error) {
+        console.error('[API] Upload error:', error)
+        return c.json({ error: 'Upload failed' }, 500)
+    }
+})
+
+// Start the Bun server (Bun --watch will naturally handle restarts)
 const server = Bun.serve({
-    port: 3001,
+    port: Number(process.env.PORT) || 3001,
     fetch: app.fetch,
     websocket,
 })
-
-    // Store the server instance globally for hot-reloading cleanup
-    ; (globalThis as any).server = server;
 
 // Clear old event listeners to prevent memory leaks during hot-reload
 wsEvents.removeAllListeners('broadcast');
@@ -71,5 +97,3 @@ wsEvents.on('broadcast', ({ userId, type, noteId }) => {
 });
 
 console.log(`[API] Server running on http://localhost:${server.port}`)
-
-export default server

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --webpack",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -23,6 +23,7 @@
     "@tiptap/starter-kit": "^3.20.0",
     "lucide-react": "^0.575.0",
     "next": "16.1.6",
+    "photon-wasm": "^0.0.4",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },

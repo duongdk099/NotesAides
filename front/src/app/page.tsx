@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useNotes, useCreateNote, useUpdateNote } from '../hooks/useNotes';
+import { useNotes, useCreateNote, useUpdateNote, useDeleteNote } from '../hooks/useNotes';
 import { useAuth } from '../contexts/AuthContext';
 import { useSync } from '../hooks/useSync';
 import { Sidebar } from '../components/Sidebar';
@@ -13,6 +13,7 @@ export default function Home() {
   const { data: notes, isLoading, isError } = useNotes();
   const { mutate: createNote, isPending: isCreating } = useCreateNote();
   const { mutate: updateNote, isPending: isUpdating } = useUpdateNote();
+  const { mutate: deleteNote } = useDeleteNote();
   const { token, logout } = useAuth();
 
   // Activate real-time sync
@@ -48,6 +49,14 @@ export default function Home() {
     }
   };
 
+  const handleDelete = (id: string) => {
+    deleteNote(id, {
+      onSuccess: () => {
+        setSelectedNote(undefined);
+      }
+    });
+  };
+
   return (
     <main className="flex h-screen w-full bg-background overflow-hidden relative">
       {/* Pane 1: Sidebar */}
@@ -69,6 +78,7 @@ export default function Home() {
         key={selectedNote?.id || (selectedNote === null ? 'new' : 'empty')}
         note={selectedNote}
         onSave={handleSave}
+        onDelete={handleDelete}
         isPending={isCreating || isUpdating}
       />
     </main>

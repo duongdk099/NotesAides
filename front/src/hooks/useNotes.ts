@@ -66,3 +66,24 @@ export function useUpdateNote() {
         },
     });
 }
+
+export function useDeleteNote() {
+    const queryClient = useQueryClient();
+    const { token } = useAuth();
+
+    return useMutation({
+        mutationFn: async (id: string) => {
+            const res = await fetch(`${API_URL}/${id}`, {
+                method: 'DELETE',
+                headers: {
+                    ...(token ? { Authorization: `Bearer ${token}` } : {})
+                }
+            });
+            if (!res.ok) throw new Error('Failed to delete note');
+            return res.json();
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['notes'] });
+        },
+    });
+}

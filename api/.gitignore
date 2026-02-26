@@ -26,3 +26,7 @@ bun.lockb
 
 # Typechecking
 *.tsbuildinfo
+
+# Uploads
+uploads/
+!uploads/.gitkeep
