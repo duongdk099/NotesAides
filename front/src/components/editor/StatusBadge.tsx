@@ -23,9 +23,10 @@ export function StatusBadge({ status, createdAt }: StatusBadgeProps) {
                 <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
             )}
             <span className="text-accent/80 transition-colors duration-300">
-                {status === 'optimizing' ? 'Optimizing Image (WASM)' :
-                    status === 'saving' ? 'Saving' :
-                        status === 'saved' ? 'Saved' : ''}
+                {status === 'optimizing' ? 'Optimizing (WASM)' :
+                    status === 'cropping' ? 'Cropping Image (WASM)' :
+                        status === 'saving' ? 'Saving' :
+                            status === 'saved' ? 'Saved' : ''}
             </span>
         </div>
     );

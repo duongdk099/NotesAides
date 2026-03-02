@@ -1,26 +1,22 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
-import { useNotes, useCreateNote, useUpdateNote, useDeleteNote } from '../hooks/useNotes';
-import { useAuth } from '../contexts/AuthContext';
-import { useSync } from '../hooks/useSync';
-import { Sidebar } from '../components/Sidebar';
-import { NoteList } from '../components/NoteList';
-import { MainEditor } from '../components/MainEditor';
-import { Note } from '../lib/types';
+import { useAuth } from '@/contexts/AuthContext';
+import { useSync } from '@/hooks/useSync';
+import { Sidebar } from '@/components/Sidebar';
+import { NoteList } from '@/components/NoteList';
+import { useNotes, useSearchNotes } from '@/hooks/useNotes';
 
 export default function Home() {
-  const { data: notes, isLoading, isError } = useNotes();
-  const { mutate: createNote, isPending: isCreating } = useCreateNote();
-  const { mutate: updateNote, isPending: isUpdating } = useUpdateNote();
-  const { mutate: deleteNote } = useDeleteNote();
+  const router = useRouter();
   const { token, logout } = useAuth();
-
-  // Activate real-time sync
-  useSync();
-
-  const [selectedNote, setSelectedNote] = useState<Note | null | undefined>(undefined);
+  const [searchQuery, setSearchQuery] = useState('');
+  const { data: allNotes, isLoading, isError } = useNotes();
+  const { data: searchResults, isLoading: isSearching } = useSearchNotes(searchQuery);
   const [mounted, setMounted] = useState(false);
+
+  useSync();
 
   useEffect(() => {
     setMounted(true);
@@ -30,59 +26,42 @@ export default function Home() {
     return null;
   }
 
-  const handleNewNote = () => {
-    setSelectedNote(null); // null means "creating new"
-  };
-
-  const handleSave = (data: { title: string; content: string }) => {
-    if (selectedNote?.id) {
-      updateNote(
-        { id: selectedNote.id, ...data },
-        {
-          onSuccess: (updatedNote) => setSelectedNote(updatedNote)
-        }
-      );
-    } else {
-      createNote(data, {
-        onSuccess: (newNote) => setSelectedNote(newNote)
-      });
-    }
-  };
-
-  const handleDelete = (id: string) => {
-    deleteNote(id, {
-      onSuccess: () => {
-        setSelectedNote(undefined);
-      }
-    });
-  };
+  const notes = searchQuery.trim() ? searchResults : allNotes;
+  const isNotesLoading = searchQuery.trim() ? isSearching : isLoading;
 
   return (
     <main className="flex h-screen w-full bg-background overflow-hidden relative">
-      {/* Pane 1: Sidebar */}
       <div className="hidden md:block">
-        <Sidebar onNewNote={handleNewNote} onLogout={logout} />
+        <Sidebar
+          onNewNote={() => router.push('/notes/new')}
+          onLogout={logout}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
       </div>
-
-      {/* Pane 2: Note List */}
       <NoteList
         notes={notes}
-        isLoading={isLoading}
+        isLoading={isNotesLoading}
         isError={isError}
-        selectedId={selectedNote?.id}
-        onSelect={(note) => setSelectedNote(note)}
+        selectedId={undefined}
+        onSelect={(note) => router.push(`/notes/${note.id}`)}
+        searchQuery={searchQuery}
+        onClearSearch={() => setSearchQuery('')}
       />
-
-      {/* Pane 3: Editor - Dynamic Key forces fresh instance on note switch */}
-      <MainEditor
-        key={selectedNote?.id || (selectedNote === null ? 'new' : 'empty')}
-        note={selectedNote}
-        onSave={handleSave}
-        onDelete={handleDelete}
-        isPending={isCreating || isUpdating}
-      />
+      <div className="flex-1 flex flex-col items-center justify-center p-12 text-center space-y-8 paper-texture">
+        <div className="relative">
+          <div className="absolute inset-0 bg-accent/20 blur-3xl rounded-full" />
+          <div className="relative w-32 h-32 bg-zinc-100 dark:bg-zinc-800 rounded-[3rem] flex items-center justify-center shadow-2xl backdrop-blur-sm border border-apple-border">
+            <span className="text-6xl drop-shadow-md">📒</span>
+          </div>
+        </div>
+        <div className="space-y-3 max-w-sm">
+          <h3 className="text-3xl font-bold tracking-tight italic">Notes</h3>
+          <p className="text-zinc-500 font-medium">
+            Select a note from the sidebar to start writing, or create a new one.
+          </p>
+        </div>
+      </div>
     </main>
   );
 }
-
-

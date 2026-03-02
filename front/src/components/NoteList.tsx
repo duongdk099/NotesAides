@@ -1,6 +1,6 @@
 import { Note } from '../lib/types';
 import { NoteCard } from './NoteCard';
-import { SearchIcon } from 'lucide-react';
+import { SearchIcon, XIcon } from 'lucide-react';
 
 interface NoteListProps {
     notes?: Note[];
@@ -8,9 +8,11 @@ interface NoteListProps {
     isError: boolean;
     selectedId?: string;
     onSelect: (note: Note) => void;
+    searchQuery?: string;
+    onClearSearch?: () => void;
 }
 
-export function NoteList({ notes, isLoading, isError, selectedId, onSelect }: NoteListProps) {
+export function NoteList({ notes, isLoading, isError, selectedId, onSelect, searchQuery, onClearSearch }: NoteListProps) {
     if (isLoading) {
         return (
             <div className="w-[320px] border-r border-apple-border h-full bg-white dark:bg-black/20 overflow-hidden">
@@ -40,18 +42,46 @@ export function NoteList({ notes, isLoading, isError, selectedId, onSelect }: No
         );
     }
 
+    const hasSearchQuery = searchQuery && searchQuery.trim().length > 0;
+    const showNoResults = hasSearchQuery && notes && notes.length === 0;
+
     return (
         <div className="w-[320px] flex flex-col border-r border-apple-border h-full bg-white dark:bg-black/20 overflow-hidden">
             {/* Note List Header */}
             <div className="h-[52px] px-4 flex items-center justify-between border-b border-apple-border/50 bg-white/50 dark:bg-black/5 backdrop-blur-md">
-                <h2 className="text-[13px] font-bold text-gray-400 uppercase tracking-widest pl-2">Notes</h2>
-                <div className="px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 text-[11px] font-bold text-gray-500">
-                    {notes?.length || 0}
+                <div className="flex items-center gap-2">
+                    {hasSearchQuery && (
+                        <SearchIcon size={14} className="text-gray-400" />
+                    )}
+                    <h2 className="text-[13px] font-bold text-gray-400 uppercase tracking-widest pl-2">
+                        {hasSearchQuery ? 'Search Results' : 'Notes'}
+                    </h2>
+                </div>
+                <div className="flex items-center gap-2">
+                    <div className="px-2 py-0.5 rounded-md bg-black/5 dark:bg-white/5 text-[11px] font-bold text-gray-500">
+                        {notes?.length || 0}
+                    </div>
+                    {hasSearchQuery && onClearSearch && (
+                        <button
+                            onClick={onClearSearch}
+                            className="p-1 hover:bg-black/5 dark:hover:bg-white/5 rounded transition-colors"
+                        >
+                            <XIcon size={12} className="text-gray-400" />
+                        </button>
+                    )}
                 </div>
             </div>
 
             <div className="flex-1 overflow-y-auto overflow-x-hidden pt-2 pb-12">
-                {notes?.length === 0 ? (
+                {showNoResults ? (
+                    <div className="p-12 text-center space-y-3 opacity-40">
+                        <div className="text-4xl">🔍</div>
+                        <p className="text-[14px] font-bold text-gray-500 italic">No results found</p>
+                        <p className="text-[12px] text-gray-400">
+                            Try a different search term
+                        </p>
+                    </div>
+                ) : notes?.length === 0 ? (
                     <div className="p-12 text-center space-y-3 opacity-40">
                         <div className="text-4xl">📭</div>
                         <p className="text-[14px] font-bold text-gray-500 italic">No Notes</p>

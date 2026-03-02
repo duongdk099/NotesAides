@@ -16,9 +16,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const router = useRouter();
 
     useEffect(() => {
-        const storedToken = localStorage.getItem('token');
+        // Try cookie first, then localStorage for backwards compatibility
+        const cookieToken = document.cookie
+            .split('; ')
+            .find(row => row.startsWith('token='))
+            ?.split('=')[1];
+        
+        const storedToken = cookieToken || localStorage.getItem('token');
+        
         if (storedToken) {
             setToken(storedToken);
+            // Ensure cookie is set for server actions
+            document.cookie = `token=${storedToken}; path=/; max-age=${7 * 24 * 60 * 60}`; // 7 days
         } else {
             router.push('/login');
         }
@@ -27,12 +36,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const login = (newToken: string) => {
         setToken(newToken);
         localStorage.setItem('token', newToken);
+        // Set cookie for server actions
+        document.cookie = `token=${newToken}; path=/; max-age=${7 * 24 * 60 * 60}`; // 7 days
         router.push('/');
     };
 
     const logout = () => {
         setToken(null);
         localStorage.removeItem('token');
+        // Clear cookie
+        document.cookie = 'token=; path=/; max-age=0';
         router.push('/login');
     };
 

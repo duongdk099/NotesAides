@@ -1,3 +1,5 @@
+import type { JSONContent } from '@tiptap/core';
+
 export function formatRelativeTime(date: string | Date) {
     const now = new Date();
     const then = new Date(date);
@@ -11,13 +13,44 @@ export function formatRelativeTime(date: string | Date) {
     return then.toLocaleDateString();
 }
 
-export function stripHtml(html: string) {
-    if (typeof window === 'undefined') return html;
-    const doc = new DOMParser().parseFromString(html, 'text/html');
-    return doc.body.textContent || "";
+export function stripHtml(content: JSONContent | string | any): string {
+    if (typeof content === 'string') {
+        if (typeof window === 'undefined') return content;
+        const doc = new DOMParser().parseFromString(content, 'text/html');
+        return doc.body.textContent || "";
+    }
+
+    if (!content) return "";
+
+    let text = "";
+    if (content.type === 'text') {
+        text += content.text || "";
+    }
+    if (content.content) {
+        for (const child of content.content) {
+            text += stripHtml(child) + " ";
+        }
+    }
+    return text.trim();
 }
 
-export function extractFirstImage(html: string) {
-    const match = html.match(/<img [^>]*src="([^"]+)"/);
-    return match ? match[1] : null;
+export function extractFirstImage(content: JSONContent | string | any): string | null {
+    if (typeof content === 'string') {
+        const match = content.match(/<img [^>]*src="([^"]+)"/);
+        return match ? match[1] : null;
+    }
+
+    if (!content) return null;
+
+    if (content.type === 'image' && content.attrs?.src) {
+        return content.attrs.src;
+    }
+
+    if (content.content) {
+        for (const child of content.content) {
+            const img = extractFirstImage(child);
+            if (img) return img;
+        }
+    }
+    return null;
 }

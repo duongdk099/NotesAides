@@ -23,15 +23,15 @@ export function useSync() {
         socketRef.current = socket;
 
         socket.onopen = () => {
-            console.log('[WS] Connected to sync server');
+            // Connected to sync server
         };
 
         socket.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
-                console.log('[WS] Message received:', data);
 
-                if (data.type === 'NOTE_UPDATED' || data.type === 'NOTE_CREATED' || data.type === 'NOTE_DELETED') {
+                const noteMutatingEvents = ['NOTE_UPDATED', 'NOTE_CREATED', 'NOTE_DELETED', 'NOTE_RESTORED', 'NOTE_PERMANENTLY_DELETED'];
+                if (noteMutatingEvents.includes(data.type)) {
                     // Invalidate notes list
                     queryClient.invalidateQueries({ queryKey: ['notes'] });
 
@@ -46,7 +46,6 @@ export function useSync() {
         };
 
         socket.onclose = () => {
-            console.log('[WS] Disconnected from sync server');
             socketRef.current = null;
         };
 
@@ -59,6 +58,4 @@ export function useSync() {
             socketRef.current = null;
         };
     }, [token, queryClient]);
-
-    return socketRef.current;
 }

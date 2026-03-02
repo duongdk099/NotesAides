@@ -8,7 +8,10 @@ import { DrizzleUserRepository } from '../infrastructure/DrizzleUserRepository';
 const authRoutes = new Hono();
 const userRepository = new DrizzleUserRepository();
 
-const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_change_in_production';
+const jwtSecret = process.env.JWT_SECRET;
+if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required');
+}
 
 const registerUserUseCase = new RegisterUserUseCase(userRepository);
 const loginUserUseCase = new LoginUserUseCase(userRepository, jwtSecret);
@@ -41,8 +44,7 @@ authRoutes.post('/forget-password', async (c) => {
         const token = await forgetPasswordUseCase.execute(body.email);
 
         // In a real app we wouldn't return the token, we'd email it.
-        // For local development, we print it securely to the backend console instead.
-        console.log(`\n📧 [DEV EMAIL SIMULATOR] Password reset requested for ${body.email}. Token: ${token}\n`);
+        // For local development, check the backend console for the token.
         return c.json({ message: 'If an account exists, a reset link was generated.' });
     } catch (error: any) {
         return c.json({ error: error.message }, 400);

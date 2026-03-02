@@ -1,105 +1,147 @@
-
 /**
  * Image Optimizer Service
- * Uses WASM (via Photon) for high-performance client-side resizing
- * and browser Canvas for high-quality WebP encoding.
+ * Uses pure Rust WASM for image processing (decode, scale, crop, rotate)
+ * and Browser Canvas for high-quality hardware-accelerated WebP encoding.
  */
 
-// We use a dynamic import approach for the WASM module to avoid issues with SSR
-// and to ensure the module is only loaded when needed.
+// We use the default export `init` to initialize the wasm module.
+// In Next.js this usually auto-fetches the .wasm file.
+import initWasm, { resize_image as wasm_resize_image, crop_image as wasm_crop_image, rotate_image as wasm_rotate_image, ProcessedImage } from 'image-wasm';
 
-let photon: any = null;
 let isInitialized = false;
 
-async function loadPhoton() {
-    if (!photon) {
-        photon = await import('photon-wasm');
-    }
-
-    // Photon-wasm requires explicit initialization
+async function loadWasm() {
     if (!isInitialized) {
         try {
-            // In a Webpack/Next.js environment with asyncWebAssembly,
-            // we might need to point it to the correct path or 
-            // the package might provide a way to load the wasm binary.
-            await photon.initWasm();
+            await initWasm();
             isInitialized = true;
         } catch (e) {
-            console.error('Photon initialization failed:', e);
-            // Some versions might not need manual init or might already be initialized
-            if (photon.initialized) isInitialized = true;
+            console.error('WASM initialization failed:', e);
+            // Ignore if it's already initialized
+            isInitialized = true;
         }
     }
-    return photon;
+}
+
+/**
+ * Converts pure raw RGBA pixels from WASM into a WebP Blob using hardware HTML5 Canvas
+ */
+function pixelsToWebpFile(pixels: Uint8Array, width: number, height: number, originalName: string, quality: number = 0.95, filenamePrefix: string = ''): Promise<File> {
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext('2d');
+
+    if (!ctx) throw new Error('Could not get canvas context');
+
+    // Uint8Array returned by wasm contains RGBA pixels
+    // Wrap it in a Uint8ClampedArray to make an ImageData
+    const clamped = new Uint8ClampedArray(pixels);
+    const imageData = new ImageData(clamped, width, height);
+
+    ctx.putImageData(imageData, 0, 0);
+
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(
+            (blob) => {
+                if (blob) {
+                    const baseName = originalName.replace(/\.[^/.]+$/, "");
+                    const finalName = filenamePrefix ? `${filenamePrefix}-${baseName}.webp` : `${baseName}.webp`;
+                    const optimizedFile = new File([blob], finalName, {
+                        type: 'image/webp',
+                        lastModified: Date.now(),
+                    });
+                    resolve(optimizedFile);
+                } else {
+                    reject(new Error('Canvas toBlob failed'));
+                }
+            },
+            'image/webp',
+            quality
+        );
+    });
 }
 
 export async function optimizeImage(file: File): Promise<File> {
-    // 1. Load the WASM module
-    const engine = await loadPhoton();
+    await loadWasm();
 
-    // 2. Read file as ArrayBuffer
     const arrayBuffer = await file.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
 
     try {
-        // 3. Create PhotonImage from encoded bytes (JPEG/PNG)
-        // Note: Use the static method new_from_byteslice
-        let photonImage = engine.PhotonImage.new_from_byteslice(bytes);
+        const MAX_WIDTH = 1920;
 
-        const MAX_WIDTH = 1200; // Reasonable max width for notes
-        const width = photonImage.get_width();
-        const height = photonImage.get_height();
+        // 1. Rust decodes JPEG/PNG, resizes if needed via Lanczos3, and returns Raw RGBA pixels
+        const processedImage: ProcessedImage = wasm_resize_image(bytes, MAX_WIDTH);
 
-        // 4. Resize if necessary (Keeping aspect ratio)
-        if (width > MAX_WIDTH) {
-            const newWidth = MAX_WIDTH;
-            const newHeight = (height * MAX_WIDTH) / width;
+        const width = processedImage.width;
+        const height = processedImage.height;
+        const pixels = processedImage.get_pixels();
 
-            // Perform WASM Resize (SamplingFilter.Triangle = 2)
-            const resizedImage = engine.resize(photonImage, newWidth, newHeight, 2);
-            photonImage.free(); // Free original memory
-            photonImage = resizedImage;
-        }
+        // Must free Rust memory properly
+        processedImage.free();
 
-        // 5. Convert to WebP using Browser Canvas
-        // Photon has a built-in method to get ImageData directly
-        const imageData = photonImage.get_image_data();
-        const finalWidth = photonImage.get_width();
-        const finalHeight = photonImage.get_height();
-
-        const canvas = document.createElement('canvas');
-        canvas.width = finalWidth;
-        canvas.height = finalHeight;
-        const ctx = canvas.getContext('2d');
-
-        if (!ctx) throw new Error('Could not get canvas context');
-
-        ctx.putImageData(imageData, 0, 0);
-
-        // 6. Clean up WASM memory
-        photonImage.free();
-
-        // 7. Export as WebP Blob
-        return new Promise((resolve, reject) => {
-            canvas.toBlob(
-                (blob) => {
-                    if (blob) {
-                        const optimizedFile = new File([blob], file.name.replace(/\.[^/.]+$/, "") + ".webp", {
-                            type: 'image/webp',
-                            lastModified: Date.now(),
-                        });
-                        resolve(optimizedFile);
-                    } else {
-                        reject(new Error('Canvas toBlob failed'));
-                    }
-                },
-                'image/webp',
-                0.85 // Quality setting (85% is the sweet spot)
-            );
-        });
+        // 2. JS packages those pixels natively to a high quality 95% WebP
+        return pixelsToWebpFile(pixels, width, height, file.name, 0.95);
 
     } catch (error) {
         console.error('[Optimizer] WASM Processing failed, falling back to original file:', error);
-        return file; // Return original file as fallback
+        return file;
+    }
+}
+
+/**
+ * Crop an image using WASM
+ */
+export async function cropImage(file: File, x: number, y: number, width: number, height: number): Promise<File> {
+    await loadWasm();
+
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    try {
+        // 1. Rust crops the image natively and returns raw RGBA pixels
+        const processedImage: ProcessedImage = wasm_crop_image(bytes, x, y, width, height);
+
+        const finalWidth = processedImage.width;
+        const finalHeight = processedImage.height;
+        const pixels = processedImage.get_pixels();
+
+        processedImage.free();
+
+        // 2. JS packages it into a final WebP (95% quality to minimize generational loss)
+        return pixelsToWebpFile(pixels, finalWidth, finalHeight, file.name, 0.95, 'cropped');
+
+    } catch (error) {
+        console.error('[Optimizer] WASM Crop failed:', error);
+        return file;
+    }
+}
+
+/**
+ * Rotate an image using WASM
+ */
+export async function rotateImage(file: File, degrees: number): Promise<File> {
+    await loadWasm();
+
+    const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+
+    try {
+        // 1. Rust rotates the image natively and returns raw RGBA pixels
+        const processedImage: ProcessedImage = wasm_rotate_image(bytes, degrees);
+
+        const finalWidth = processedImage.width;
+        const finalHeight = processedImage.height;
+        const pixels = processedImage.get_pixels();
+
+        processedImage.free();
+
+        // 2. JS packages it into a final WebP (95% quality to minimize generational loss)
+        return pixelsToWebpFile(pixels, finalWidth, finalHeight, file.name, 0.95, `rotated-${degrees}`);
+
+    } catch (error) {
+        console.error('[Optimizer] WASM Rotate failed:', error);
+        return file;
     }
 }

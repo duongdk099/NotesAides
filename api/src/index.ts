@@ -13,6 +13,12 @@ const { upgradeWebSocket, websocket } = createBunWebSocket()
 
 app.use('*', cors())
 
+// Validate required environment variables
+const jwtSecret = process.env.JWT_SECRET
+if (!jwtSecret) {
+    throw new Error('JWT_SECRET environment variable is required')
+}
+
 app.get('/', (c) => {
     return c.text('Hello from NotesAides API!')
 })
@@ -22,7 +28,6 @@ app.get(
     '/ws',
     upgradeWebSocket(async (c) => {
         const token = c.req.query('token')
-        const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_change_in_production'
 
         if (!token) return { status: 4001, reason: 'Token required' }
 
@@ -32,11 +37,10 @@ app.get(
 
             return {
                 onOpen(evt, ws) {
-                    console.log(`[WS] User ${userId} connected`)
-                        ; (ws.raw as any).subscribe(`user_${userId}`)
+                    ; (ws.raw as any).subscribe(`user_${userId}`)
                 },
                 onClose() {
-                    console.log(`[WS] User ${userId} disconnected`)
+                    // Connection closed
                 },
             }
         } catch (err) {
@@ -51,8 +55,11 @@ app.route('/auth', authRoutes)
 // Serve uploaded files
 app.use('/uploads/*', serveStatic({ root: './' }))
 
+// File upload validation constants
+const ALLOWED_FILE_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+const MAX_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+
 // Authenticated upload endpoint
-const jwtSecret = process.env.JWT_SECRET || 'supersecretkey_change_in_production'
 app.post('/upload', jwt({ secret: jwtSecret, alg: 'HS256' }), async (c) => {
     try {
         const body = await c.req.parseBody()
@@ -60,6 +67,20 @@ app.post('/upload', jwt({ secret: jwtSecret, alg: 'HS256' }), async (c) => {
 
         if (!file) {
             return c.json({ error: 'No file uploaded' }, 400)
+        }
+
+        // Validate file type
+        if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+            return c.json({ 
+                error: 'Invalid file type. Allowed: JPEG, PNG, WebP' 
+            }, 400)
+        }
+
+        // Validate file size
+        if (file.size > MAX_FILE_SIZE) {
+            return c.json({ 
+                error: 'File too large. Maximum size: 10MB' 
+            }, 400)
         }
 
         const extension = file.name.split('.').pop()
@@ -75,7 +96,6 @@ app.post('/upload', jwt({ secret: jwtSecret, alg: 'HS256' }), async (c) => {
             url: `${baseUrl}/uploads/${fileName}`
         })
     } catch (error) {
-        console.error('[API] Upload error:', error)
         return c.json({ error: 'Upload failed' }, 500)
     }
 })
@@ -92,8 +112,5 @@ wsEvents.removeAllListeners('broadcast');
 
 // Listen for notifications from routes and broadcast to subscribers
 wsEvents.on('broadcast', ({ userId, type, noteId }) => {
-    console.log(`[WS] Broadcasting ${type} for user ${userId}`);
     server.publish(`user_${userId}`, JSON.stringify({ type, noteId }));
 });
-
-console.log(`[API] Server running on http://localhost:${server.port}`)

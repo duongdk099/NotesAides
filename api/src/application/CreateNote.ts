@@ -1,11 +1,12 @@
 import { Note, INoteRepository } from '../domain/Note';
+import { randomUUID } from 'crypto';
 
 export class CreateNoteUseCase {
     constructor(private noteRepository: INoteRepository) { }
 
-    async execute(userId: string, title: string, content: string): Promise<Note> {
+    async execute(userId: string, title: string, content: any): Promise<Note> {
         const note: Note = {
-            id: crypto.randomUUID(),
+            id: randomUUID(),
             userId,
             title,
             content,

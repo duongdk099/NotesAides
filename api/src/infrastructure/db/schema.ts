@@ -1,11 +1,12 @@
-import { pgTable, text, timestamp, varchar } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, varchar, jsonb } from 'drizzle-orm/pg-core';
 
 export const notes = pgTable('notes', {
     id: varchar('id', { length: 255 }).primaryKey(),
     userId: varchar('user_id', { length: 255 }).notNull().references(() => users.id, { onDelete: 'cascade' }),
     title: varchar('title', { length: 255 }).notNull(),
-    content: text('content').notNull(),
+    content: jsonb('content').notNull(),
     createdAt: timestamp('created_at').notNull(),
+    deletedAt: timestamp('deleted_at'),
 });
 
 export const users = pgTable('users', {

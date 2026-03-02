@@ -8,16 +8,19 @@ import { Table } from '@tiptap/extension-table';
 import { TableRow } from '@tiptap/extension-table-row';
 import { TableCell } from '@tiptap/extension-table-cell';
 import { TableHeader } from '@tiptap/extension-table-header';
-import { Image } from '@tiptap/extension-image';
+import { TextAlign } from '@tiptap/extension-text-align';
+import { BubbleMenu } from '@tiptap/extension-bubble-menu';
+import { ResizableImage } from '../components/editor/extensions/ResizableImage';
 import { Note } from '../lib/types';
-import { optimizeImage } from '../lib/imageOptimizer';
+import { optimizeImage, cropImage, rotateImage } from '../lib/imageOptimizer';
 import { useAuth } from '../contexts/AuthContext';
+import type { JSONContent } from '@tiptap/core';
 
-export type SaveStatus = 'idle' | 'saving' | 'saved' | 'optimizing';
+export type SaveStatus = 'idle' | 'saving' | 'saved' | 'optimizing' | 'cropping' | 'rotating';
 
 interface UseNoteEditorProps {
     note?: Note | null;
-    onSave: (note: { title: string; content: string }) => void;
+    onSave: (note: { title: string; content: JSONContent }) => void;
     isPending: boolean;
 }
 
@@ -26,39 +29,64 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
     const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
     const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const { token } = useAuth();
+    const lastNoteIdRef = useRef<string | null>(null);
 
     // Use refs to avoid stale closures
     const titleRef = useRef(title);
     titleRef.current = title;
-    const onSaveRef = useRef(onSave);
-    onSaveRef.current = onSave;
 
     useEffect(() => {
         if (note) {
             setTitle(note.title);
             titleRef.current = note.title;
+            // Reset auto-save timer when switching to a different note
+            if (note.id !== lastNoteIdRef.current) {
+                lastNoteIdRef.current = note.id;
+                if (autoSaveTimerRef.current) {
+                    clearTimeout(autoSaveTimerRef.current);
+                    autoSaveTimerRef.current = null;
+                }
+            }
         }
     }, [note]);
 
+    const editorRef = useRef<any>(null);
+
     const triggerAutoSave = useCallback(() => {
+        // Skip auto-save if save operation is in progress
+        if (isPending) return;
+
         if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
         setSaveStatus('idle');
 
         autoSaveTimerRef.current = setTimeout(() => {
-            if (!editor) return;
-            const currentContent = editor.getHTML();
-            const currentTitle = titleRef.current;
+            const currentEditor = editorRef.current;
+            if (!currentEditor) return;
+            const currentContent = currentEditor.getJSON();
+            const currentTitle = titleRef.current.trim() || 'Untitled Note';
 
-            if (!currentTitle.trim() || !currentContent.trim() || currentContent === '<p></p>') return;
+            // Don't save if content is completely empty
+            const isEmpty = !currentContent ||
+                (currentContent.content &&
+                 currentContent.content.length === 1 &&
+                 (!currentContent.content[0]?.content ||
+                  currentContent.content[0].content.length === 0));
+            if (isEmpty) return;
 
             setSaveStatus('saving');
-            onSaveRef.current({ title: currentTitle, content: currentContent });
+            onSave({ title: currentTitle, content: currentContent });
         }, 500);
-    }, []);
+    }, [onSave, isPending]);
+
+
 
     const editor = useEditor({
         immediatelyRender: false,
         extensions: [
+            TextAlign.configure({
+                types: ['heading', 'paragraph'],
+            }),
+            BubbleMenu,
             StarterKit.configure({
                 heading: { levels: [1, 2, 3] },
                 bulletList: { keepMarks: true, keepAttributes: false },
@@ -73,10 +101,11 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
             TableRow,
             TableHeader,
             TableCell,
-            Image.configure({ inline: true, allowBase64: true }),
+            ResizableImage.configure({ inline: true, allowBase64: true }),
         ],
         content: note?.content || '',
-        onUpdate: () => {
+        onUpdate: ({ editor: e }) => {
+            editorRef.current = e;
             triggerAutoSave();
         },
         editorProps: {
@@ -106,8 +135,23 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
         },
     }, [note?.id]); // Re-init if note ID changes
 
+    useEffect(() => {
+        if (editor) {
+            editorRef.current = editor;
+        }
+    }, [editor]);
+
     const handleFileUpload = async (file: File) => {
         if (!editor || !token) return;
+
+        // Check for HEIC/HEIF format specifically
+        const isHeic = file.type === 'image/heic' || file.type === 'image/heif' ||
+            file.name.toLowerCase().endsWith('.heic') || file.name.toLowerCase().endsWith('.heif');
+
+        if (isHeic) {
+            alert("HEIC images (iPhone format) are not yet supported. Please upload a JPEG or PNG.");
+            return;
+        }
 
         try {
             setSaveStatus('optimizing');
@@ -127,10 +171,75 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
             if (!response.ok) throw new Error('Upload failed');
 
             const data = await response.json();
-            editor.chain().focus().setImage({ src: data.url }).run();
+            const timestampUrl = `${data.url}?v=${Date.now()}`;
+            editor.chain().focus().setImage({ src: timestampUrl }).run();
             setSaveStatus('saved');
         } catch (error) {
             console.error('[Editor] Upload error:', error);
+            setSaveStatus('idle');
+        }
+    };
+
+    const handleCrop = async (file: File, pixelCrop: any) => {
+        if (!editor || !token) return;
+
+        try {
+            setSaveStatus('cropping');
+            const croppedFile = await cropImage(file, pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height);
+
+            const formData = new FormData();
+            formData.append('file', croppedFile);
+
+            setSaveStatus('saving');
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const response = await fetch(`${baseUrl}/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData,
+            });
+
+            if (!response.ok) throw new Error('Crop upload failed');
+
+            const data = await response.json();
+            const timestampUrl = `${data.url}?v=${Date.now()}`;
+
+            // Replace current selected image in editor
+            editor.chain().focus().deleteSelection().setImage({ src: timestampUrl }).run();
+            setSaveStatus('saved');
+        } catch (error) {
+            console.error('[Editor] Crop error:', error);
+            setSaveStatus('idle');
+        }
+    };
+
+    const handleRotate = async (file: File, degrees: number) => {
+        if (!editor || !token) return;
+
+        try {
+            setSaveStatus('rotating');
+            const rotatedFile = await rotateImage(file, degrees);
+
+            const formData = new FormData();
+            formData.append('file', rotatedFile);
+
+            setSaveStatus('saving');
+            const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+            const response = await fetch(`${baseUrl}/upload`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData,
+            });
+
+            if (!response.ok) throw new Error('Rotate upload failed');
+
+            const data = await response.json();
+            const timestampUrl = `${data.url}?v=${Date.now()}`;
+
+            // Replace current selected image in editor
+            editor.chain().focus().deleteSelection().setImage({ src: timestampUrl }).run();
+            setSaveStatus('saved');
+        } catch (error) {
+            console.error('[Editor] Rotate error:', error);
             setSaveStatus('idle');
         }
     };
@@ -142,12 +251,41 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
     };
 
     useEffect(() => {
+        // Update status when save completes
         if (!isPending && saveStatus === 'saving') {
             setSaveStatus('saved');
+        }
+
+        // Auto-hide "Saved" status after 2.5 seconds
+        if (saveStatus === 'saved') {
             const timer = setTimeout(() => setSaveStatus('idle'), 2500);
             return () => clearTimeout(timer);
         }
     }, [isPending, saveStatus]);
+
+    // Update editor content when switching to a different note
+    useEffect(() => {
+        if (!editor) return;
+        
+        // Switching to a new note (null) - clear editor
+        if (note === null) {
+            editor.commands.clearContent();
+            setTitle('');
+            titleRef.current = '';
+            return;
+        }
+        
+        // Switching to an existing note - load its content
+        if (note?.content) {
+            const currentContent = editor.getJSON();
+            // Only update if content is different to avoid cursor jumps
+            if (JSON.stringify(currentContent) !== JSON.stringify(note.content)) {
+                editor.commands.setContent(note.content);
+                setTitle(note.title || '');
+                titleRef.current = note.title || '';
+            }
+        }
+    }, [note?.id, note]);
 
     return {
         editor,
@@ -155,6 +293,8 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
         saveStatus,
         handleTitleChange,
         handleFileUpload,
+        handleCrop,
+        handleRotate,
         setSaveStatus
     };
 }
