@@ -1,12 +1,11 @@
 'use client';
 
-import { useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { Sidebar } from '@/components/Sidebar';
 import { NoteList } from '@/components/NoteList';
 import { MainEditor } from '@/components/MainEditor';
-import { updateNote, deleteNote } from '@/app/actions/notes';
-import { useNotes } from '@/hooks/useNotes';
+import { deleteNote } from '@/app/actions/notes';
+import { useNotes, useUpdateNote } from '@/hooks/useNotes';
 import { useAuth } from '@/contexts/AuthContext';
 import type { JSONContent } from '@tiptap/core';
 
@@ -23,15 +22,10 @@ export function EditorWrapper({ note }: EditorWrapperProps) {
   const router = useRouter();
   const { logout } = useAuth();
   const { data: notes, isLoading, isError } = useNotes();
-  const [isPending, startTransition] = useTransition();
+  const updateNote = useUpdateNote();
 
   const handleSave = (data: { title: string; content: JSONContent }) => {
-    startTransition(async () => {
-      const result = await updateNote(note.id, data);
-      if (result?.error) {
-        console.error('Failed to update note:', result.error);
-      }
-    });
+    updateNote.mutate({ id: note.id, ...data });
   };
 
   const handleDelete = async () => {
@@ -60,7 +54,7 @@ export function EditorWrapper({ note }: EditorWrapperProps) {
         note={note}
         onSave={handleSave}
         onDelete={handleDelete}
-        isPending={isPending}
+        isPending={updateNote.isPending}
       />
     </main>
   );

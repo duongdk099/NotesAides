@@ -96,20 +96,30 @@ export function useUpdateNote() {
                 },
                 body: JSON.stringify(updates),
             });
-            
-            const errorData = await res.text();
+
+            // Parse body once — res.text()/res.json() can only be called once per response
+            const text = await res.text();
             if (!res.ok) {
-                console.error('Update note error:', { 
-                    status: res.status, 
+                console.error('Update note error:', {
+                    status: res.status,
                     statusText: res.statusText,
-                    body: errorData,
-                    noteId: id 
+                    body: text,
+                    noteId: id,
                 });
-                throw new Error(`Failed to update note (${res.status}): ${errorData}`);
+                throw new Error(`Failed to update note (${res.status}): ${text}`);
             }
-            return res.json();
+            return JSON.parse(text);
         },
-        onSuccess: () => {
+        onSuccess: (updatedNote) => {
+            // Surgically update the note in the cache — no extra network request needed
+            queryClient.setQueryData<Note[]>(['notes'], (old) =>
+                old ? old.map((n) => (n.id === updatedNote.id ? updatedNote : n)) : old
+            );
+            // Also update individual note cache if present
+            queryClient.setQueryData(['note', updatedNote.id], updatedNote);
+        },
+        onError: () => {
+            // On failure, invalidate so the list re-fetches to restore consistency
             queryClient.invalidateQueries({ queryKey: ['notes'] });
         },
     });

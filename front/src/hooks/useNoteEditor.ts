@@ -35,6 +35,12 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
     const titleRef = useRef(title);
     titleRef.current = title;
 
+    // Keep latest onSave and isPending in refs so triggerAutoSave never goes stale
+    const onSaveRef = useRef(onSave);
+    onSaveRef.current = onSave;
+    const isPendingRef = useRef(isPending);
+    isPendingRef.current = isPending;
+
     useEffect(() => {
         if (note) {
             setTitle(note.title);
@@ -52,10 +58,23 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
 
     const editorRef = useRef<any>(null);
 
-    const triggerAutoSave = useCallback(() => {
-        // Skip auto-save if save operation is in progress
-        if (isPending) return;
+    // Stable ref to triggerAutoSave — always points to the latest version.
+    // This is what the editor's onUpdate calls, avoiding stale closures.
+    const triggerAutoSaveRef = useRef<() => void>(() => {});
 
+    // Tracks whether a save was skipped because a previous one was still in flight.
+    // When isPending clears, we retry immediately.
+    const hasPendingChangesRef = useRef(false);
+
+    const triggerAutoSave = useCallback(() => {
+        // If a save is already in flight, mark that we have unsaved changes and bail.
+        // The isPending watcher effect below will retry once the current save finishes.
+        if (isPendingRef.current) {
+            hasPendingChangesRef.current = true;
+            return;
+        }
+
+        hasPendingChangesRef.current = false;
         if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
         setSaveStatus('idle');
 
@@ -63,7 +82,7 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
             const currentEditor = editorRef.current;
             if (!currentEditor) return;
             const currentContent = currentEditor.getJSON();
-            const currentTitle = titleRef.current.trim() || 'Untitled Note';
+            const currentTitle = titleRef.current.trim() || '';
 
             // Don't save if content is completely empty
             const isEmpty = !currentContent ||
@@ -74,9 +93,12 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
             if (isEmpty) return;
 
             setSaveStatus('saving');
-            onSave({ title: currentTitle, content: currentContent });
-        }, 500);
-    }, [onSave, isPending]);
+            onSaveRef.current({ title: currentTitle, content: currentContent });
+        }, 1000);
+    }, []); // no deps — uses refs for everything that changes
+
+    // Keep the ref in sync with the latest callback
+    triggerAutoSaveRef.current = triggerAutoSave;
 
 
 
@@ -106,7 +128,7 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
         content: note?.content || '',
         onUpdate: ({ editor: e }) => {
             editorRef.current = e;
-            triggerAutoSave();
+            triggerAutoSaveRef.current();
         },
         editorProps: {
             handleDrop: (view, event, slice, moved) => {
@@ -256,6 +278,13 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
             setSaveStatus('saved');
         }
 
+        // When a previous save just finished and we had changes that were skipped,
+        // fire the save now so nothing is lost (e.g. an image uploaded during a previous save).
+        if (!isPending && hasPendingChangesRef.current) {
+            hasPendingChangesRef.current = false;
+            triggerAutoSaveRef.current();
+        }
+
         // Auto-hide "Saved" status after 2.5 seconds
         if (saveStatus === 'saved') {
             const timer = setTimeout(() => setSaveStatus('idle'), 2500);
@@ -263,10 +292,12 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
         }
     }, [isPending, saveStatus]);
 
-    // Update editor content when switching to a different note
+    // Load content only when switching to a different note (id change).
+    // We intentionally do NOT watch the full `note` object to avoid the editor
+    // being overwritten by server re-renders while the user is actively editing.
     useEffect(() => {
         if (!editor) return;
-        
+
         // Switching to a new note (null) - clear editor
         if (note === null) {
             editor.commands.clearContent();
@@ -274,18 +305,14 @@ export function useNoteEditor({ note, onSave, isPending }: UseNoteEditorProps) {
             titleRef.current = '';
             return;
         }
-        
-        // Switching to an existing note - load its content
+
+        // Load content for this note ID
         if (note?.content) {
-            const currentContent = editor.getJSON();
-            // Only update if content is different to avoid cursor jumps
-            if (JSON.stringify(currentContent) !== JSON.stringify(note.content)) {
-                editor.commands.setContent(note.content);
-                setTitle(note.title || '');
-                titleRef.current = note.title || '';
-            }
+            editor.commands.setContent(note.content);
+            setTitle(note.title || '');
+            titleRef.current = note.title || '';
         }
-    }, [note?.id, note]);
+    }, [note?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
     return {
         editor,

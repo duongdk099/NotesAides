@@ -90,7 +90,7 @@ export function DeletedWrapper() {
                   <div className="flex-1 space-y-0.5 min-w-0">
                     <div className="flex justify-between items-baseline gap-2">
                       <h3 className="font-bold text-[15px] truncate text-gray-900 dark:text-gray-100">
-                        {note.title || 'Untitled Note'}
+                        {note.title || ''}
                       </h3>
                     </div>
                     <div className="flex items-center gap-2">
