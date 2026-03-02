@@ -49,7 +49,8 @@ function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect
       {/* Header */}
       <div className="px-10 pt-12 pb-6">
         <div className="flex items-end justify-between">
-
+          <h2 className="text-3xl font-bold tracking-tight">Your Notes</h2>
+          
           <button
             onClick={onNewNote}
             className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-2xl text-sm font-semibold shadow hover:opacity-90 active:scale-95 transition-all"
