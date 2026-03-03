@@ -1,23 +1,35 @@
-'use client';
+"use client";
 
-import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
-import { Sidebar } from '@/components/Sidebar';
-import { NoteList } from '@/components/NoteList';
-import { useNotes, useSearchNotes } from '@/hooks/useNotes';
-import { stripHtml, extractFirstImage, formatRelativeTime } from '@/lib/utils';
-import { PlusIcon, FileTextIcon, CalendarIcon, ClockIcon } from 'lucide-react';
-import { Note } from '@/lib/types';
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Sidebar } from "@/components/Sidebar";
+import { NoteList } from "@/components/NoteList";
+import { useNotes, useSearchNotes } from "@/hooks/useNotes";
+import { stripHtml, extractFirstImage, formatRelativeTime } from "@/lib/utils";
+import { PlusIcon, FileTextIcon, CalendarIcon, ClockIcon } from "lucide-react";
+import { Note } from "@/lib/types";
 
-function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect: (note: Note) => void; onNewNote: () => void }) {
+function NotesOverview({
+  notes,
+  onSelect,
+  onNewNote,
+}: {
+  notes: Note[];
+  onSelect: (note: Note) => void;
+  onNewNote: () => void;
+}) {
   const now = new Date();
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const weekStart = new Date(todayStart);
   weekStart.setDate(weekStart.getDate() - 6);
 
-  const todayCount = notes.filter(n => new Date(n.createdAt) >= todayStart).length;
-  const weekCount = notes.filter(n => new Date(n.createdAt) >= weekStart).length;
+  const todayCount = notes.filter(
+    (n) => new Date(n.createdAt) >= todayStart,
+  ).length;
+  const weekCount = notes.filter(
+    (n) => new Date(n.createdAt) >= weekStart,
+  ).length;
   const recentNotes = notes.slice(0, 6);
 
   if (notes.length === 0) {
@@ -30,8 +42,12 @@ function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect
           </div>
         </div>
         <div className="space-y-3 max-w-sm">
-          <h3 className="text-3xl font-bold tracking-tight italic">No Notes Yet</h3>
-          <p className="text-zinc-500 font-medium">Create your first note to get started.</p>
+          <h3 className="text-3xl font-bold tracking-tight italic">
+            No Notes Yet
+          </h3>
+          <p className="text-zinc-500 font-medium">
+            Create your first note to get started.
+          </p>
           <button
             onClick={onNewNote}
             className="inline-flex items-center gap-2 mt-2 px-5 py-2.5 bg-accent text-white rounded-2xl font-semibold shadow-md hover:opacity-90 active:scale-95 transition-all"
@@ -49,8 +65,10 @@ function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect
       {/* Header */}
       <div className="px-10 pt-12 pb-6">
         <div className="flex items-end justify-between">
+          <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-1">
+            Overview
+          </p>
           <h2 className="text-3xl font-bold tracking-tight">Your Notes</h2>
-          
           <button
             onClick={onNewNote}
             className="flex items-center gap-2 px-4 py-2 bg-accent text-white rounded-2xl text-sm font-semibold shadow hover:opacity-90 active:scale-95 transition-all"
@@ -94,7 +112,9 @@ function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect
 
       {/* Recent notes grid */}
       <div className="px-10 pb-12">
-        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">Recent</p>
+        <p className="text-xs font-bold text-gray-400 uppercase tracking-widest mb-4">
+          Recent
+        </p>
         <div className="grid grid-cols-2 xl:grid-cols-3 gap-4">
           {recentNotes.map((note) => {
             const snippet = stripHtml(note.content);
@@ -113,10 +133,10 @@ function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect
                 )}
                 <div className="p-4 space-y-1">
                   <h3 className="font-bold text-[14px] truncate text-gray-900 dark:text-gray-100">
-                    {note.title || 'Untitled Note'}
+                    {note.title || "Untitled Note"}
                   </h3>
                   <p className="text-[12px] text-gray-400 line-clamp-2 leading-relaxed">
-                    {snippet || 'No additional text'}
+                    {snippet || "No additional text"}
                   </p>
                   <p className="text-[11px] text-gray-300 dark:text-gray-600 pt-1">
                     {formatRelativeTime(note.createdAt)}
@@ -134,9 +154,10 @@ function NotesOverview({ notes, onSelect, onNewNote }: { notes: Note[]; onSelect
 export default function Home() {
   const router = useRouter();
   const { token, logout } = useAuth();
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const { data: allNotes = [], isLoading, isError } = useNotes();
-  const { data: searchResults, isLoading: isSearching } = useSearchNotes(searchQuery);
+  const { data: searchResults, isLoading: isSearching } =
+    useSearchNotes(searchQuery);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -154,7 +175,7 @@ export default function Home() {
     <main className="flex h-screen w-full bg-background overflow-hidden relative">
       <div className="hidden md:block">
         <Sidebar
-          onNewNote={() => router.push('/notes/new')}
+          onNewNote={() => router.push("/notes/new")}
           onLogout={logout}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -167,12 +188,12 @@ export default function Home() {
         selectedId={undefined}
         onSelect={(note) => router.push(`/notes/${note.id}`)}
         searchQuery={searchQuery}
-        onClearSearch={() => setSearchQuery('')}
+        onClearSearch={() => setSearchQuery("")}
       />
       <NotesOverview
         notes={allNotes}
         onSelect={(note) => router.push(`/notes/${note.id}`)}
-        onNewNote={() => router.push('/notes/new')}
+        onNewNote={() => router.push("/notes/new")}
       />
     </main>
   );
